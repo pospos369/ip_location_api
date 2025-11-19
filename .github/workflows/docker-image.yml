@@ -1,0 +1,101 @@
+name: Docker Build and Push
+
+on:
+  workflow_dispatch:  # 支持手动触发
+  push:
+    branches: [ main ]  # 主分支推送时触发
+    paths:
+      - 'Dockerfile'    # 仅当Dockerfile变更时触发（可选）
+      - '.github/workflows/docker-build.yml'  # 工作流文件变更时触发
+
+env:
+  # 远程仓库配置（需在GitHub仓库设置中添加对应secrets）
+  REMOTE_REGISTRY: ${{ secrets.REMOTE_REGISTRY }}  # 例如：docker.io、ghcr.io、registry.cn-hangzhou.aliyuncs.com
+  REMOTE_REPO: ${{ secrets.REMOTE_REPO }}          # 仓库名称，例如：myproject
+  REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+  REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+  # 构建配置
+  IMAGE_NAME: app  # 基础镜像名
+  DEFAULT_TAG: latest  # 默认标签
+
+jobs:
+  build-and-push:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check disk space before cleanup
+        run: |
+          echo "Disk space before cleanup"
+          echo "======================================"
+          df -hT
+          echo "======================================"
+
+      # 清理磁盘空间（保留原逻辑）
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 2048
+          swap-size-mb: 128
+          remove-dotnet: 'true'
+          remove-haskell: 'true'
+          # 如需更多空间可取消注释
+          # remove-android: 'true'
+          # remove-codeql: 'true'
+          build-mount-path: '/var/lib/docker/'
+
+      - name: Restart Docker
+        run: sudo service docker restart
+
+      - name: Check disk space after cleanup
+        run: |
+          echo "Disk space after cleanup"
+          echo "======================================"
+          df -hT
+          echo "======================================"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 配置Docker Buildx（支持多平台构建）
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 登录到远程仓库
+      - name: Login to remote registry
+        run: |
+          echo "${{ env.REGISTRY_PASSWORD }}" | docker login ${{ env.REMOTE_REGISTRY }} -u ${{ env.REGISTRY_USERNAME }} --password-stdin
+
+      # 构建并推送镜像
+      - name: Build and push Docker image
+        run: |
+          # 生成标签（使用commit SHA和默认标签）
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          TAGS="${{ env.REMOTE_REGISTRY }}/${{ env.REMOTE_REPO }}/${{ env.IMAGE_NAME }}:${COMMIT_SHA},${{ env.REMOTE_REGISTRY }}/${{ env.REMOTE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
+          
+          # 构建参数（根据需要添加）
+          BUILD_ARGS="--build-arg APP_VERSION=${COMMIT_SHA}"
+          
+          # 多平台构建配置（如需单平台可移除--platform参数）
+          PLATFORMS="linux/amd64,linux/arm64"
+          
+          # 执行构建并推送
+          docker buildx build \
+            --platform ${PLATFORMS} \
+            --push \
+            ${BUILD_ARGS} \
+            --tag ${TAGS} \
+            -f Dockerfile .
+
+      # 清理镜像释放空间
+      - name: Cleanup images
+        if: always()  # 无论构建成功与否都执行清理
+        run: |
+          echo "Cleaning up Docker images"
+          docker system prune -af
+          echo "======================================"
+          df -hT
+          echo "======================================"
+
+      - name: Logout from registry
+        if: always()
+        run: docker logout ${{ env.REMOTE_REGISTRY }}
