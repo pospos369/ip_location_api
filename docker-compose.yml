@@ -1,0 +1,15 @@
+version: '3'
+
+services:
+  ip-location-api:
+    build: .
+    ports:
+      - "8000:8000"
+    restart: always
+    environment:
+      - TZ=Asia/Shanghai
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
