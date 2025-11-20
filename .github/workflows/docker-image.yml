@@ -4,16 +4,15 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
-    tags: [ 'v*' ]  # 新增标签触发条件
+    tags: [ 'v*' ]  # 支持标签触发
 
 env:
   ALIYUN_REGISTRY: "${{ secrets.ALIYUN_REGISTRY }}"
   ALIYUN_NAME_SPACE: "${{ secrets.ALIYUN_NAME_SPACE }}"
   ALIYUN_REGISTRY_USER: "${{ secrets.ALIYUN_REGISTRY_USER }}"
   ALIYUN_REGISTRY_PASSWORD: "${{ secrets.ALIYUN_REGISTRY_PASSWORD }}"
-  IMAGE_NAME: "my-app"
-  # 从分支名或标签名获取镜像标签（替换斜杠为连字符，避免Docker标签无效）
-  IMAGE_TAG: "${{ github.ref_name }}"
+  IMAGE_NAME: "ip-location-api"  # 建议使用项目名作为镜像名
+  IMAGE_TAG: "${{ github.ref_name }}"  # 分支名或标签名作为基础标签
 
 jobs:
   build-and-push:
@@ -58,28 +57,40 @@ jobs:
 
       - name: Process image tag (replace invalid characters)
         run: |
-          # Docker标签不允许包含斜杠，替换为连字符
-          echo "IMAGE_TAG=${IMAGE_TAG//\//-}" >> $GITHUB_ENV
+          # 处理Docker标签中不允许的字符（如斜杠替换为连字符）
+          echo "PROCESSED_TAG=${IMAGE_TAG//\//-}" >> $GITHUB_ENV
 
       - name: Build Docker Image
         run: |
-          docker build -t $IMAGE_NAME:$IMAGE_TAG .
+          # 构建镜像，同时关联基础标签和latest标签
+          docker build -t $IMAGE_NAME:${{ env.PROCESSED_TAG }} -t $IMAGE_NAME:latest .
 
-      - name: Tag Image for Aliyun Registry
+      - name: Tag Image for Aliyun Registry (with version and latest)
         run: |
-          ALIYUN_IMAGE=$ALIYUN_REGISTRY/$ALIYUN_NAME_SPACE/$IMAGE_NAME:$IMAGE_TAG
-          echo "Aliyun image address: $ALIYUN_IMAGE"
-          docker tag $IMAGE_NAME:$IMAGE_TAG $ALIYUN_IMAGE
+          # 生成阿里云仓库的版本标签和latest标签
+          ALIYUN_IMAGE_VERSION=$ALIYUN_REGISTRY/$ALIYUN_NAME_SPACE/$IMAGE_NAME:${{ env.PROCESSED_TAG }}
+          ALIYUN_IMAGE_LATEST=$ALIYUN_REGISTRY/$ALIYUN_NAME_SPACE/$IMAGE_NAME:latest
+          echo "Aliyun version image: $ALIYUN_IMAGE_VERSION"
+          echo "Aliyun latest image: $ALIYUN_IMAGE_LATEST"
+          # 为两个标签分别打标记
+          docker tag $IMAGE_NAME:${{ env.PROCESSED_TAG }} $ALIYUN_IMAGE_VERSION
+          docker tag $IMAGE_NAME:latest $ALIYUN_IMAGE_LATEST
+          # 保存标签变量供后续步骤使用
+          echo "ALIYUN_IMAGE_VERSION=$ALIYUN_IMAGE_VERSION" >> $GITHUB_ENV
+          echo "ALIYUN_IMAGE_LATEST=$ALIYUN_IMAGE_LATEST" >> $GITHUB_ENV
 
-      - name: Push Image to Aliyun Registry
+      - name: Push Images to Aliyun Registry (version + latest)
         run: |
-          ALIYUN_IMAGE=$ALIYUN_REGISTRY/$ALIYUN_NAME_SPACE/$IMAGE_NAME:$IMAGE_TAG
-          docker push $ALIYUN_IMAGE
+          # 同时推送版本标签和latest标签
+          docker push ${{ env.ALIYUN_IMAGE_VERSION }}
+          docker push ${{ env.ALIYUN_IMAGE_LATEST }}
 
       - name: Cleanup
         run: |
-          ALIYUN_IMAGE=$ALIYUN_REGISTRY/$ALIYUN_NAME_SPACE/$IMAGE_NAME:$IMAGE_TAG
-          docker rmi $IMAGE_NAME:$IMAGE_TAG
-          docker rmi $ALIYUN_IMAGE
+          # 清理本地镜像（包括版本标签和latest标签）
+          docker rmi $IMAGE_NAME:${{ env.PROCESSED_TAG }}
+          docker rmi $IMAGE_NAME:latest
+          docker rmi ${{ env.ALIYUN_IMAGE_VERSION }}
+          docker rmi ${{ env.ALIYUN_IMAGE_LATEST }}
           echo "Cleanup completed"
           df -hT
