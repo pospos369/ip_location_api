@@ -5,8 +5,9 @@ on:
   push:
     branches: [ main ]  # 主分支推送时触发
     paths:
-      - 'Dockerfile'    # 仅当Dockerfile变更时触发（可选）
-      - '.github/workflows/docker-build.yml'  # 工作流文件变更时触发
+      - 'Dockerfile' 
+      - '.github/workflows/docker-build.yml'
+      - 'main.py'
 
 env:
   # 远程仓库配置（需在GitHub仓库设置中添加对应secrets）
