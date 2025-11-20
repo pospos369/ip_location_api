@@ -1,37 +1,33 @@
-name: Docker Build and Push
+name: Docker Build and Push to Aliyun
 
 on:
   workflow_dispatch:  # 支持手动触发
   push:
     branches: [ main ]  # 主分支推送时触发
     paths:
-      - 'Dockerfile' 
+      - 'Dockerfile'
       - '.github/workflows/docker-build.yml'
-      - 'main.py'
 
 env:
-  # 远程仓库配置（需在GitHub仓库设置中添加对应secrets）
-  REMOTE_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}  # 例如：docker.io、ghcr.io、registry.cn-hangzhou.aliyuncs.com
-  REMOTE_REPO: ${{ secrets.ALIYUN_NAME_SPACE }}          # 仓库名称，例如：myproject
-  REGISTRY_USERNAME: ${{ secrets.ALIYUN_REGISTRY_USER }}
-  REGISTRY_PASSWORD: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
-  # 构建配置
-  IMAGE_NAME: app  # 基础镜像名
-  DEFAULT_TAG: latest  # 默认标签
+  # 阿里云容器仓库配置（需在GitHub仓库Secrets中添加对应值）
+  ALIYUN_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}          # 例如：registry.cn-hangzhou.aliyuncs.com
+  ALIYUN_NAME_SPACE: ${{ secrets.ALIYUN_NAME_SPACE }}      # 阿里云命名空间，例如：myproject
+  ALIYUN_REGISTRY_USER: ${{ secrets.ALIYUN_REGISTRY_USER }}  # 阿里云仓库登录账号
+  ALIYUN_REGISTRY_PASSWORD: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}  # 阿里云仓库登录密码（或访问令牌）
+  # 镜像基础信息
+  IMAGE_NAME: ip-location-api  # 镜像名称
+  DEFAULT_TAG: latest          # 默认标签
 
 jobs:
   build-and-push:
-    name: Build Docker Image
     runs-on: ubuntu-latest
     steps:
       - name: Check disk space before cleanup
         run: |
           echo "Disk space before cleanup"
-          echo "======================================"
           df -hT
-          echo "======================================"
 
-      # 清理磁盘空间（保留原逻辑）
+      # 清理磁盘空间，确保构建环境有足够空间
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
         with:
@@ -39,9 +35,6 @@ jobs:
           swap-size-mb: 128
           remove-dotnet: 'true'
           remove-haskell: 'true'
-          # 如需更多空间可取消注释
-          # remove-android: 'true'
-          # remove-codeql: 'true'
           build-mount-path: '/var/lib/docker/'
 
       - name: Restart Docker
@@ -50,10 +43,9 @@ jobs:
       - name: Check disk space after cleanup
         run: |
           echo "Disk space after cleanup"
-          echo "======================================"
           df -hT
-          echo "======================================"
 
+      # 拉取代码
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -61,42 +53,37 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 登录到远程仓库
-      - name: Login to remote registry
+      # 登录阿里云容器仓库
+      - name: Login to Aliyun Container Registry
         run: |
-          echo "${{ env.REGISTRY_PASSWORD }}" | docker login ${{ env.REMOTE_REGISTRY }} -u ${{ env.REGISTRY_USERNAME }} --password-stdin
+          echo "${{ env.ALIYUN_REGISTRY_PASSWORD }}" | docker login ${{ env.ALIYUN_REGISTRY }} \
+            -u ${{ env.ALIYUN_REGISTRY_USER }} --password-stdin
 
-      # 构建并推送镜像
-      - name: Build and push Docker image
+      # 构建并推送镜像（修复标签格式错误）
+      - name: Build and push Docker image to Aliyun
         run: |
-          # 生成标签（使用commit SHA和默认标签）
+          # 生成基于commit的标签（短SHA）
           COMMIT_SHA=$(git rev-parse --short HEAD)
-          TAGS="${{ env.REMOTE_REGISTRY }}/${{ env.REMOTE_REPO }}/${{ env.IMAGE_NAME }}:${COMMIT_SHA},${{ env.REMOTE_REGISTRY }}/${{ env.REMOTE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
           
-          # 构建参数（根据需要添加）
-          BUILD_ARGS="--build-arg APP_VERSION=${COMMIT_SHA}"
+          # 拼接完整镜像路径（阿里云格式： registry/命名空间/镜像名:标签）
+          FULL_IMAGE_PATH="${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAME_SPACE }}/${{ env.IMAGE_NAME }}"
           
-          # 多平台构建配置（如需单平台可移除--platform参数）
-          PLATFORMS="linux/amd64,linux/arm64"
-          
-          # 执行构建并推送
+          # 构建并推送（多标签需用多个--tag参数，而非逗号分隔）
           docker buildx build \
-            --platform ${PLATFORMS} \
+            --platform linux/amd64 \  # 如需多平台可改为linux/amd64,linux/arm64（注意用逗号分隔）
             --push \
-            ${BUILD_ARGS} \
-            --tag ${TAGS} \
+            --tag "${FULL_IMAGE_PATH}:${COMMIT_SHA}" \  # 第一个标签：commit-sha
+            --tag "${FULL_IMAGE_PATH}:${{ env.DEFAULT_TAG }}" \  # 第二个标签：latest
             -f Dockerfile .
 
       # 清理镜像释放空间
-      - name: Cleanup images
-        if: always()  # 无论构建成功与否都执行清理
-        run: |
-          echo "Cleaning up Docker images"
-          docker system prune -af
-          echo "======================================"
-          df -hT
-          echo "======================================"
-
-      - name: Logout from registry
+      - name: Cleanup Docker images
         if: always()
-        run: docker logout ${{ env.REMOTE_REGISTRY }}
+        run: |
+          docker system prune -af
+          df -hT
+
+      # 登出仓库
+      - name: Logout from Aliyun Container Registry
+        if: always()
+        run: docker logout ${{ env.ALIYUN_REGISTRY }}
