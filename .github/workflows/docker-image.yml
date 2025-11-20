@@ -11,10 +11,10 @@ on:
 
 env:
   # 远程仓库配置（需在GitHub仓库设置中添加对应secrets）
-  REMOTE_REGISTRY: ${{ secrets.REMOTE_REGISTRY }}  # 例如：docker.io、ghcr.io、registry.cn-hangzhou.aliyuncs.com
-  REMOTE_REPO: ${{ secrets.REMOTE_REPO }}          # 仓库名称，例如：myproject
-  REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
-  REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+  REMOTE_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}  # 例如：docker.io、ghcr.io、registry.cn-hangzhou.aliyuncs.com
+  REMOTE_REPO: ${{ secrets.ALIYUN_NAME_SPACE }}          # 仓库名称，例如：myproject
+  REGISTRY_USERNAME: ${{ secrets.ALIYUN_REGISTRY_USER }}
+  REGISTRY_PASSWORD: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
   # 构建配置
   IMAGE_NAME: app  # 基础镜像名
   DEFAULT_TAG: latest  # 默认标签
