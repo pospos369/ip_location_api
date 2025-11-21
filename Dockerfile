@@ -7,9 +7,12 @@ LABEL version="2.2"
 LABEL description="IP地址地理位置查询接口服务（支持百度/高德/PConline等多上游自动切换）"
 
 # 环境变量配置
-ENV PYTHONDONTWRITEBYTECODE=1  # 禁止生成.pyc文件
-ENV PYTHONUNBUFFERED=1         # 实时输出日志
-ENV TZ=Asia/Shanghai           # 时区配置
+# 禁止生成.pyc文件
+ENV PYTHONDONTWRITEBYTECODE=1
+# 实时输出日志
+ENV PYTHONUNBUFFERED=1
+# 时区配置
+ENV TZ=Asia/Shanghai
 
 # 设置工作目录
 WORKDIR /app
