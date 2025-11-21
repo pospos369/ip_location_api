@@ -1,168 +1,271 @@
 # IP地址地理位置查询接口服务
 
-一个高性能、高可用的IP地址地理位置查询后端接口，基于FastAPI构建，整合多上游数据源，支持自动故障转移与容器化部署。
+![版本](https://img.shields.io/badge/version-1.0-blue.svg)
+![技术栈](https://img.shields.io/badge/tech-FastAPI%20%7C%20Docker%20%7C%20Python-blue.svg)
+![许可证](https://img.shields.io/badge/license-Apache%20License%202.0-blue.svg)
 
+## 项目概述
+IP Location API 是一个基于 FastAPI 构建的高性能、高可用IP地址地理位置查询后端服务。整合百度地图、高德地图、百度开放平台、PConline 四大上游数据源，支持 **自动故障转移**、**原生格式响应** 与 **统一格式转换**，同时通过严格的输入校验和容器化部署，确保生产环境的安全性与可扩展性。
 
-## 功能特点
+### 核心价值
+- 多上游冗余：避免单一接口依赖风险，提升服务可用性；
+- 智能降级：AK/Key 无效/缺失时自动切换至其他上游；
+- 格式兼容：支持百度/高德原生格式，同时提供统一响应格式；
+- 易于部署：Docker 一键启动，支持生产环境直接使用；
+- 排查便捷：完善的日志系统，支持 DEBUG 级别的数据追踪。
 
-1. **多上游数据源**：整合百度地图、百度开放平台、PConline等多个IP查询接口，自动切换确保可用性；  
-2. **智能故障转移**：当百度地图AK无效、缺失或受限（如错误码240/230/101）时，自动切换至其他上游接口；  
-3. **严格数据校验**：强制验证IP格式，防范SQL注入等恶意输入；确保响应中`省份`和`城市`信息必填；  
-4. **统一响应格式**：输出格式标准化，与百度地图接口响应结构兼容；  
-5. **容器化部署**：提供Docker配置，支持快速部署与扩展。  
-
-
-## 响应格式示例
-
-```json
-{
-  "status": 0,
-  "address": "CN|广东省|清远市|清新区|None|100|91|89",
-  "content": {
-    "address": "广东省清远市清新区",
-    "address_detail": {
-      "adcode": "441803",
-      "city": "清远市",
-      "city_code": 197,
-      "district": "清新区",
-      "province": "广东省",
-      "street": "",
-      "street_number": ""
-    },
-    "point": {
-      "x": "113.02403576132977",
-      "y": "23.74023614897897"
-    }
-  }
-}
-
-字段说明：
-- `status`：状态码（0 = 成功，非 0 = 失败）；
-- `address`：地址层级串（格式：国家 | 省份 | 城市 | 区县 |...）；
-- `content.address_detail`：详细地址信息（`province`和`city`为必填项）；
-- `content.point`：经纬度坐标（仅百度地图接口返回，其他接口可能为空）。
-```
+## 功能特性（v1.0 最新）
+| 特性 | 详情 |
+|------|------|
+| 多上游支持 | 百度地图（需AK）、高德地图（需Key）、百度开放平台（免Key）、PConline（免Key） |
+| 智能降级 | 1. 提供AK → 百度原生；2. 提供Key → 高德原生；3. 均不提供 → 用默认密钥随机选择上游 |
+| 格式转换 | 非原生上游数据自动转换为目标格式（如 `/v3/ip` 始终返回高德风格格式） |
+| 省份提取修复 | 支持完整提取"广东省"、"广西壮族自治区"、"北京市"等省份名称，解决部分接口省份显示不完整问题 |
+| 日志排查 | 支持 INFO/DEBUG 级日志，打印上游选用、原始响应、转换结果，便于问题定位 |
+| 安全加固 | IP格式严格校验（防注入）、非root用户运行、密钥脱敏、日志轮转 |
+| 健康检查 | 内置健康检查接口，Docker 自动监控服务状态 |
 
 ## 快速开始
 
 ### 环境要求
+- Docker 20.10+ + Docker Compose 2.0+（推荐部署方式）
+- 或 Python 3.9+（手动部署）
+- 百度地图 AK（可选，从 [百度地图开放平台](https://lbsyun.baidu.com/) 申请）
+- 高德地图 Key（可选，从 [高德开放平台](https://lbs.amap.com/) 申请）
 
-- 推荐：Docker 20.10+ 与 Docker Compose 2.0+
-- 手动部署：Python 3.9+
-
-### 项目结构
-
-```plaintext
-ip_location_api/
-├── main.py           # 核心逻辑（接口定义、上游调用、数据转换）
-├── Dockerfile        # Docker构建配置
-├── docker-compose.yml # 容器编排配置
-└── requirements.txt  # 依赖清单
-```
-
-### 部署方式
-
-#### 方式 1：Docker 部署（推荐）
-
+### 部署步骤（Docker 推荐）
 1. **克隆项目**
-
+   
    ```bash
    git clone <项目仓库地址>
-   cd ip_location_api
+   cd ip-location-api
 
-2. **启动服务**
+2.**配置默认密钥**
 
-   一键构建并启动容器（默认端口 8000）：
+   编辑 `docker-compose.yml`，替换以下字段为实际申请的密钥：
+
+   ```yaml
+   environment:
+     - BAIDU_DEFAULT_AK=你的百度AK  # 替换为实际值
+     - AMAP_DEFAULT_KEY=你的高德Key  # 替换为实际值
+   ```
+3. **启动服务**
 
    ```bash
+   # 构建并后台启动
    docker-compose up -d --build
+   
+   # 查看启动状态
+   docker-compose ps
+   
+   # 查看日志（验证启动成功）
+   docker logs -f ip-location-api
    ```
-3. **验证部署**
 
-   服务启动后，通过`curl`或浏览器访问接口：
+4.**验证服务**
+
+   服务启动后，访问 `http://localhost:8000/docs` 可查看 Swagger 接口文档，或直接用 `curl` 测试：
 
    ```bash
-   # 无AK调用（自动使用百度开放平台/PConline）
-   curl "http://localhost:8000/location/ip?ip=1.1.1.1"
+   # 测试高德风格接口（无Key，自动降级）
+   curl "http://localhost:8000/v3/ip?ip=114.247.50.2"
    
-   # 有AK调用（优先使用百度地图）
-   curl "http://localhost:8000/location/ip?ip=1.1.1.1&ak=你的百度AK"
-   ```
+   # 测试通用接口（提供百度AK，返回百度原生格式）
+   curl "http://localhost:8000/location/ip?ip=114.247.50.2&ak=你的百度AK"
 
-   若返回上述示例格式的 JSON，说明部署成功。
+### 手动部署（可选）
 
-#### 方式 2：手动部署
-
-1. **安装依赖**
+1. 安装依赖：
 
    ```bash
    pip install -r requirements.txt
    ```
-2. **启动服务**
+2. 配置环境变量（默认密钥）：
 
    ```bash
-   uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+   # Linux/Mac
+   export BAIDU_DEFAULT_AK=你的百度AK
+   export AMAP_DEFAULT_KEY=你的高德Key
+   
+   # Windows（cmd）
+   set BAIDU_DEFAULT_AK=你的百度AK
+   set AMAP_DEFAULT_KEY=你的高德Key
    ```
+3. 启动服务：
 
-   （`--reload`为开发模式热重载，生产环境建议移除）
+   ```bash
+   # 生产环境
+   uvicorn main:app --host 0.0.0.0 --port 8000 --log-level info
+   
+   # 调试模式（开启DEBUG日志）
+   uvicorn main:app --host 0.0.0.0 --port 8000 --log-level debug --reload
+   ```
+## 接口详情
 
-### 接口说明
+### 1. 通用 IP 查询接口
+- 接口地址：`GET /location/ip`
+- 功能：根据提供的密钥返回对应上游原生格式，无密钥则返回统一格式
+- 请求参数：
 
-#### 接口地址
+| 参数名 | 类型   | 必选 | 说明                                       |
+| ------ | ------ | ---- | ------------------------------------------ |
+| ip     | string | 是   | 待查询 IPv4 地址（如 `114.247.50.2`）      |
+| coor   | string | 否   | 坐标类型（仅百度地图使用，默认 `bd09ll`）  |
+| ak     | string | 否   | 百度地图 AK（提供则优先调用百度原生接口）  |
+| key    | string | 否   | 高德地图 Key（提供则优先调用高德原生接口） |
 
+- 响应示例（百度原生格式）：
+  ```json
+  {
+    "status": 0,
+    "address": "CN|广东省|惠州市|None|None|100|91|89",
+    "content": {
+      "address": "广东省惠州市",
+      "address_detail": {
+        "adcode": "441300",
+        "city": "惠州市",
+        "city_code": 195,
+        "district": "",
+        "province": "广东省",
+        "street": "",
+        "street_number": ""
+      },
+      "point": {
+        "x": "114.41785405731201",
+        "y": "23.078590970458984"
+      }
+    }
+  }
+  ```
+### 2. 高德风格 IP 查询接口
+
+- 接口地址：`GET /v3/ip`
+- 功能：始终返回高德原生格式，无 Key 时自动降级至其他上游
+- 请求参数：
+
+| 参数名 | 类型   | 必选 | 说明                                   |
+| ------ | ------ | ---- | -------------------------------------- |
+| ip     | string | 是   | 待查询 IPv4 地址                       |
+| key    | string | 否   | 高德地图 Key（可选，不提供则自动降级） |
+
+- 响应示例（成功，自动降级至 PConline）：
+
+  ```json
+  {
+    "status": "1",
+    "info": "OK（上游接口：PConline）",
+    "infocode": "10000",
+    "province": "广东省",
+    "city": "惠州市",
+    "adcode": "4400001300",
+    "rectangle": ""
+  }
+  ```
+- 响应示例（失败）：
+
+  ```json
+  {
+    "status": "0",
+    "info": "所有上游接口均不可用",
+    "infocode": "10003",
+    "province": "",
+    "city": "",
+    "adcode": "",
+    "rectangle": ""
+  }
+  ```
+### 3. 健康检查接口
+
+- 接口地址：`GET /health`
+
+- 功能：验证服务是否正常运行
+
+- 响应：
+
+  ```json
+  {
+    "status": "healthy",
+    "version": "2.2",
+    "timestamp": "2024-05-21T10:00:00+08:00"
+  }
+  ```
+## 错误码说明（高德接口）
+| 错误码 | 说明                         | 解决方案                                                     |
+| ------ | ---------------------------- | ------------------------------------------------------------ |
+| 10000  | 成功                         | -                                                            |
+| 10001  | 无效 IP 格式                 | 检查 IP 是否为合法 IPv4 地址                                 |
+| 10002  | 无可用上游（未配置默认密钥） | 在 docker-compose.yml 中配置 BAIDU_DEFAULT_AK/AMAP_DEFAULT_KEY |
+| 10003  | 所有上游接口不可用           | 检查网络连接或上游接口状态                                   |
+## 日志排查指南
+
+### 日志分级
+
+| 级别    | 作用                           | 开启方式                                       |
+| ------- | ------------------------------ | ---------------------------------------------- |
+| INFO    | 常规运行状态（默认）           | Docker 启动时无需额外配置                      |
+| DEBUG   | 问题排查（打印原始响应、参数） | 修改 Dockerfile 启动命令为 `--log-level debug` |
+| WARNING | 警告信息（数据缺失、接口降级） | 自动输出，无需配置                             |
+| ERROR   | 错误信息（接口调用失败）       | 自动输出，无需配置                             |
+### 查看日志
+```bash
+# 实时查看日志
+docker logs -f ip-location-api
+
+# 过滤特定IP的日志（Linux/Mac）
+docker logs ip-location-api | grep "IP:114.247.50.2"
+
+# 导出日志到文件
+docker logs ip-location-api > ip-api-logs.txt
 ```
-GET /location/ip
+
+### 日志示例（DEBUG 级别）
+
+```plaintext
+2024-05-21 10:00:00,000 - __main__ - INFO - IP:114.247.50.2 - 收到高德风格IP查询请求，key=未提供
+2024-05-21 10:00:00,001 - __main__ - INFO - IP:114.247.50.2 - 降级上游顺序: ['PConline', '百度开放平台']
+2024-05-21 10:00:00,002 - __main__ - INFO - IP:114.247.50.2 - 尝试降级上游接口：PConline
+2024-05-21 10:00:00,003 - __main__ - DEBUG - IP:114.247.50.2 - PConline原生响应: {'ip': '114.247.50.2', 'pro': '广东省', 'city': '惠州市', 'addr': '广东省惠州市 铁通', 'err': ''}
+2024-05-21 10:00:00,004 - __main__ - DEBUG - IP:114.247.50.2 - 提取结果：省份=广东省，城市=惠州市
+2024-05-21 10:00:00,005 - __main__ - INFO - IP:114.247.50.2 - 转换为高德格式结果: {'status': '1', 'info': 'OK（上游接口：PConline）', 'province': '广东省', 'city': '惠州市'}
 ```
 
-#### 请求参数
+## 进阶配置
 
-| 参数名 | 类型   | 是否必选 | 说明                                          |
-| ------ | ------ | -------- | --------------------------------------------- |
-| ip     | string | 是       | 待查询的 IPv4 地址（如`1.1.1.1`）             |
-| coor   | string | 否       | 坐标类型（默认`bd09ll`，仅百度地图接口使用）  |
-| ak     | string | 否       | 百度地图 AK（可选，不提供则跳过百度地图接口） |
+### 1. 开启调试模式
 
-#### 上游接口切换逻辑
+修改 `docker-compose.yml` 中的启动命令：
 
-服务按以下优先级调用上游接口，返回第一个有效结果：
+```yaml
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "debug"]
+```
 
-1. 若提供`ak`，优先调用**百度地图接口**；
-2. 若百度地图接口失败（AK 无效 / 超时 / 数据缺失），切换至**百度开放平台接口**；
-3. 若百度开放平台接口失败，切换至**PConline 接口**；
-4. 所有接口失败时，返回`503 Service Unavailable`。
+重启服务：`docker-compose up -d`
 
-## 安全与性能优化
+### 2. 修改端口映射
 
-1. **输入安全**
-   - 基于正则表达式严格校验 IP 格式（`xxx.xxx.xxx.xxx`，每个段 0-255），拒绝包含特殊字符的恶意输入；
-   - 上游接口调用设置 5 秒超时，避免因外部服务异常导致本服务阻塞。
-2. **性能建议**
-   - 高并发场景建议在前端添加缓存层（如 Redis），缓存 IP 查询结果（缓存时效可设为 1-24 小时）；
-   - 生产环境部署时，通过`docker-compose`扩展容器实例数量，配合 Nginx 负载均衡。
+如需将服务端口改为 80，修改 `docker-compose.yml`：
 
-## 扩展与定制
+```yaml
+ports:
+  - "80:8000"
+```
 
-### 新增上游接口
+### 3. 新增上游接口
 
-1. 在`main.py`中实现新接口的查询函数（参考`query_baidu_opendata`或`query_pconline`），返回`IPResponse`对象；
-2. 在`get_ip_location`函数的`upstream_apis`列表中添加新函数，调整调用优先级。
-
-### 配置调整
-
-- 端口修改：在`docker-compose.yml`中修改`ports`映射（如`"80:8000"`）；
-- 日志级别：在`main.py`中调整`logging.basicConfig(level=logging.INFO)`（可选`DEBUG`/`WARNING`）；
-- 超时时间：修改上游接口调用的`timeout`参数（默认 5 秒）。
+1. 在 `main.py` 中实现新的查询函数（参考 `query_pconline_unified`）；
+2. 在 `get_ip_location` 和 `amap_style_ip_query` 的上游列表中添加新函数；
+3. 重新构建镜像：`docker-compose up -d --build`。
 
 ## 常见问题
 
-1. **为什么返回`503`错误？**
+### Q1：调用接口返回 “无可用上游接口”？
 
-   可能是所有上游接口均不可用（如网络问题、接口变更），可查看容器日志（`docker logs ip-location-api_ip-location-api_1`）排查具体错误。
+A2：检查 `docker-compose.yml` 中是否配置了 `BAIDU_DEFAULT_AK` 或 `AMAP_DEFAULT_KEY`，或确保免 Key 上游接口（百度开放平台、PConline）可访问。
 
-2. **百度 AK 如何获取？**
+### Q2：如何查看服务是否健康？
 
-   需在[百度地图开放平台](https://lbsyun.baidu.com/)注册账号，创建应用后获取 AK（选择 “IP 定位” 服务）。
+A4：访问 `http://localhost:8000/health`，或通过 Docker 查看：`docker inspect --format '{{json .State.Health}}' ip-location-api`。
 
-3. **是否支持 IPv6？**
+## 版本更新记录
 
-   目前仅支持 IPv4，如需 IPv6 可扩展`is_valid_ip`函数的正则表达式，并确认上游接口是否支持。
+- v1.0：初始版本，支持百度地图、百度开放平台、PConline 、高德开放平台接口。

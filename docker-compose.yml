@@ -1,15 +1,32 @@
 version: '3'
-
 services:
   ip-location-api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ip-location-api
     ports:
       - "8000:8000"
     restart: always
     environment:
       - TZ=Asia/Shanghai
+      # 默认API密钥（必填！请替换为实际申请的密钥）
+      - BAIDU_DEFAULT_AK=your_actual_baidu_ak_here
+      - AMAP_DEFAULT_KEY=your_actual_amap_key_here
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - ip-api-network
+
+networks:
+  ip-api-network:
+    driver: bridge
