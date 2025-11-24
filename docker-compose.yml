@@ -1,4 +1,5 @@
-version: '3'
+version: '3.8'
+
 services:
   ip-location-api:
     build:
@@ -10,8 +11,12 @@ services:
     restart: always
     environment:
       - TZ=Asia/Shanghai
-      - BAIDU_DEFAULT_AK=
-      - AMAP_DEFAULT_KEY=
+      - BAIDU_DEFAULT_AK=your_actual_baidu_ak_here
+      - AMAP_DEFAULT_KEY=your_actual_amap_key_here
+      - ENABLE_BAIDU_MAP_IP=true
+      - ENABLE_AMAP_IP=true
+      - ENABLE_BAIDU_OPENDATA=true
+      - ENABLE_PCONLINE=true
     logging:
       driver: "json-file"
       options:
@@ -22,9 +27,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 20s
     networks:
       - ip-api-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
 networks:
   ip-api-network:
